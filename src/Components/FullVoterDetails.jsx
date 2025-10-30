@@ -28,10 +28,10 @@ const FullVoterDetails = () => {
   // Candidate branding
   const candidateInfo = useMemo(() => ({
     name: "जननेता",
-    party: "भारतीय जनता पार्टी",
-    electionSymbol: "कमळ",
+    party: "जननेता जनता पार्टी",
+    electionSymbol: "जननेता",
     slogan: "सबका साथ, सबका विकास",
-    contact: "8888869612",
+    contact: "8668722207",
     area: "वाशीम प्रभाग 1",
   }), []);
 

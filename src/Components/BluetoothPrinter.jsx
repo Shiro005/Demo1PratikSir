@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { FiPrinter, FiBluetooth, FiDownload, FiShare2, FiMessageCircle } from 'react-icons/fi';
+import { FiPrinter, FiBluetooth, FiDownload, FiShare2, FiMessageCircle, FiX } from 'react-icons/fi';
 import { FaWhatsapp, FaRegFilePdf } from 'react-icons/fa';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import TranslatedText from './TranslatedText';
+import { getDatabase, ref, set, get } from 'firebase/database';
 
 // Global Bluetooth connection state (same as original)
 let globalBluetoothConnection = {
@@ -17,6 +18,9 @@ const BluetoothPrinter = ({ voter, familyMembers, candidateInfo }) => {
   const [bluetoothConnected, setBluetoothConnected] = useState(globalBluetoothConnection.connected);
   const [printerDevice, setPrinterDevice] = useState(globalBluetoothConnection.device);
   const [printerCharacteristic, setPrinterCharacteristic] = useState(globalBluetoothConnection.characteristic);
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [isFamily, setIsFamily] = useState(false);
 
   useEffect(() => {
     // Initialize from global connection state
@@ -225,20 +229,20 @@ const BluetoothPrinter = ({ voter, familyMembers, candidateInfo }) => {
       const translatedFamily =
         isFamily && familyMembers.length > 0
           ? await Promise.all(
-              familyMembers.map(async (member) => {
-                const mGender = member?.gender || '';
-                const mAge = (member?.age ?? '')?.toString?.() || '';
-                return {
-                  ...member,
-                  name: await translateToMarathi(member.name || ''),
-                  voterId: await translateToMarathi(member.voterId || ''),
-                  boothNumber: await translateToMarathi(String(member.boothNumber ?? '')),
-                  pollingStationAddress: await translateToMarathi(member.pollingStationAddress || ''),
-                  gender: await translateToMarathi(mGender),
-                  age: await translateToMarathi(mAge),
-                };
-              })
-            )
+            familyMembers.map(async (member) => {
+              const mGender = member?.gender || '';
+              const mAge = (member?.age ?? '')?.toString?.() || '';
+              return {
+                ...member,
+                name: await translateToMarathi(member.name || ''),
+                voterId: await translateToMarathi(member.voterId || ''),
+                boothNumber: await translateToMarathi(String(member.boothNumber ?? '')),
+                pollingStationAddress: await translateToMarathi(member.pollingStationAddress || ''),
+                gender: await translateToMarathi(mGender),
+                age: await translateToMarathi(mAge),
+              };
+            })
+          )
           : [];
 
       await printReceiptAsImage(
@@ -411,30 +415,79 @@ const BluetoothPrinter = ({ voter, familyMembers, candidateInfo }) => {
     alert('Bluetooth printer disconnected');
   };
 
-  const generateWhatsAppMessage = () => {
-    let message = `🗳️ *${candidateInfo.party}*\n`;
+  const generateWhatsAppMessage = (isFamily = false) => {
+    let message = `*${candidateInfo.party}*\n`;
     message += `*${candidateInfo.name}*\n`;
     message += `${candidateInfo.slogan}\n\n`;
-    
-    message += `👤 *मतदार तपशील*\n\n`;
-    message += `नाव: ${voter.name}\n`;
-    message += `मतदार आयडी: ${voter.voterId || 'N/A'}\n`;
-    message += `अनुक्रमांक: ${voter.serialNumber || 'N/A'}\n`;
-    message += `बूथ क्र.: ${voter.boothNumber || 'N/A'}\n`;
-    message += `पत्ता: ${voter.pollingStationAddress || 'N/A'}\n`;
-    
-    if (voter.age) message += `वय: ${voter.age}\n`;
-    if (voter.gender) message += `लिंग: ${voter.gender}\n`;
-    
-    message += `\n🙏 कृपया ${candidateInfo.electionSymbol} या चिन्हावर मतदान करा\n`;
-    message += `📞 संपर्क: ${candidateInfo.contact}`;
-    
+
+    if (isFamily && familyMembers.length > 0) {
+      message += `*कुटुंब तपशील*\n\n`;
+      message += `*1) <TranslatedText>${voter.name}</TranslatedText>*\n`;
+      message += `अनुक्रमांक: ${voter.serialNumber || 'N/A'}\n`;
+      message += `मतदार आयडी: ${voter.voterId || 'N/A'}\n`;
+      message += `बूथ क्र.: ${voter.boothNumber || 'N/A'}\n`;
+      message += `लिंग: ${voter.gender || 'N/A'}\n`;
+      message += `वय: <TranslatedText>${voter.age || 'N/A'}</TranslatedText>\n`;
+      message += `मतदान केंद्र: ${voter.pollingStationAddress || 'N/A'}\n\n`;
+
+      familyMembers.forEach((member, index) => {
+        message += `*${index + 2}) ${member.name}*\n`;
+        message += `अनुक्रमांक: ${member.serialNumber || 'N/A'}\n`;
+        message += `मतदार आयडी: ${member.voterId || 'N/A'}\n`;
+        message += `बूथ क्र.: ${member.boothNumber || 'N/A'}\n`;
+        message += `लिंग: ${member.gender || 'N/A'}\n`;
+        message += `वय: ${member.age || 'N/A'}\n`;
+        message += `मतदान केंद्र: ${member.pollingStationAddress || 'N/A'}\n\n`;
+      });
+    } else {
+      message += `*मतदार तपशील*\n\n`;
+      message += `*नाव:* ${voter.name}\n`;
+      message += `*मतदार आयडी:* ${voter.voterId || 'N/A'}\n`;
+      message += `*अनुक्रमांक:* ${voter.serialNumber || 'N/A'}\n`;
+      message += `*बूथ क्र.:* ${voter.boothNumber || 'N/A'}\n`;
+      message += `*लिंग:* ${voter.gender || 'N/A'}\n`;
+      message += `*वय:* ${voter.age || 'N/A'}\n`;
+      message += `*मतदान केंद्र:* ${voter.pollingStationAddress || 'N/A'}\n\n`;
+    }
+
+    message += `मी आपला *जननेता* माझी निशाणी *जननेता* या चिन्हावर मतदान करून मला प्रचंड बहुमतांनी विजय करा\n\n`;
+    message += `*${candidateInfo.name}*`;
+
     return message;
   };
 
+  const saveWhatsAppNumber = async (number) => {
+    try {
+      const db = getDatabase();
+      const voterRef = ref(db, `voters/${voter.voterId}/whatsapp`);
+      await set(voterRef, number);
+      return true;
+    } catch (error) {
+      console.error('Error saving WhatsApp number:', error);
+      return false;
+    }
+  };
+
+  const handleWhatsAppShare = async () => {
+    if (whatsappNumber) {
+      const saved = await saveWhatsAppNumber(whatsappNumber);
+      if (saved) {
+        const message = generateWhatsAppMessage(isFamily);
+        const url = `https://wa.me/${whatsappNumber.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`;
+        window.open(url, '_blank');
+        setShowWhatsAppModal(false);
+        setWhatsappNumber('');
+      } else {
+        alert('व्हॉट्सअॅप क्रमांक जतन करण्यात त्रुटी आली');
+      }
+    } else {
+      alert('कृपया वैध व्हॉट्सअॅप क्रमांक प्रविष्ट करा');
+    }
+  };
+
   const shareOnWhatsApp = async () => {
-    const message = generateWhatsAppMessage();
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+    setIsFamily(false);
+    setShowWhatsAppModal(true);
   };
 
   const shareViaSMS = () => {
@@ -447,12 +500,12 @@ const BluetoothPrinter = ({ voter, familyMembers, candidateInfo }) => {
       const element = document.getElementById('voter-receipt');
       const canvas = await html2canvas(element, { scale: 2 });
       const imgData = canvas.toDataURL('image/png');
-      
+
       const pdf = new jsPDF();
       const imgProps = pdf.getImageProperties(imgData);
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      
+
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`voter-${voter.voterId || voter.id}.pdf`);
     } catch (error) {
@@ -464,59 +517,99 @@ const BluetoothPrinter = ({ voter, familyMembers, candidateInfo }) => {
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4">Quick Actions</h3>
-
-      {/* Primary Action Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-        <ActionBtn
-          icon={FaWhatsapp}
-          label="WhatsApp"
-          onClick={shareOnWhatsApp}
-          color="bg-green-500 hover:bg-green-600"
-        />
-        <ActionBtn
-          icon={FiPrinter}
-          label="Print"
-          onClick={() => printViaBluetooth(false)}
-          color="bg-indigo-600 hover:bg-indigo-700"
-          disabled={printing}
-        />
-        <ActionBtn
-          icon={FiShare2}
-          label="Share"
-          onClick={() => navigator.share?.({
-            title: `${candidateInfo.name}`,
-            text: `Voter Details: ${voter.name}, Voter ID: ${voter.voterId}, Booth: ${voter.boothNumber}`,
-          })}
-          color="bg-purple-500 hover:bg-purple-600"
-        />
-        <ActionBtn
-          icon={FiMessageCircle}
-          label="SMS"
-          onClick={shareViaSMS}
-          color="bg-blue-400 hover:bg-blue-500"
-        />
-      </div>
-
-      {/* Bluetooth Status */}
-      <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <FiBluetooth className={bluetoothConnected ? "text-green-500" : "text-gray-400"} />
-            <span className="text-xs text-gray-600">Printer: {bluetoothConnected ? 'Connected' : 'Disconnected'}</span>
-          </div>
-          {bluetoothConnected && (
+    <>
+      {showWhatsAppModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">व्हॉट्सअॅप क्रमांक प्रविष्ट करा</h3>
+              <button
+                onClick={() => {
+                  setShowWhatsAppModal(false);
+                  setWhatsappNumber('');
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <FiX size={24} />
+              </button>
+            </div>
+            <input
+              type="tel"
+              maxLength="10"
+              placeholder="व्हॉट्सअॅप क्रमांक टाका"
+              value={whatsappNumber}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, '');
+                if (value.length <= 10) {
+                  setWhatsappNumber(value);
+                }
+              }}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
             <button
-              onClick={disconnectBluetooth}
-              className="text-red-600 text-xs hover:text-red-700 font-medium"
+              onClick={handleWhatsAppShare}
+              disabled={whatsappNumber.length !== 10}
+              className="w-full bg-green-500 text-white py-2 px-4 rounded-lg font-medium hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Disconnect
+              व्हॉट्सअॅप वर पाठवा
             </button>
-          )}
+          </div>
+        </div>
+      )}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
+        <h3 className="text-sm font-semibold text-gray-900 mb-4">Quick Actions</h3>
+
+        {/* Primary Action Row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <ActionBtn
+            icon={FaWhatsapp}
+            label="WhatsApp"
+            onClick={shareOnWhatsApp}
+            color="bg-green-500 hover:bg-green-600"
+          />
+          <ActionBtn
+            icon={FiPrinter}
+            label="Print"
+            onClick={() => printViaBluetooth(false)}
+            color="bg-indigo-600 hover:bg-indigo-700"
+            disabled={printing}
+          />
+          <ActionBtn
+            icon={FiShare2}
+            label="Share"
+            onClick={() => navigator.share?.({
+              title: `${candidateInfo.name}`,
+              text: `Voter Details: ${voter.name}, Voter ID: ${voter.voterId}, Booth: ${voter.boothNumber}`,
+            })}
+            color="bg-purple-500 hover:bg-purple-600"
+          />
+          <ActionBtn
+            icon={FiMessageCircle}
+            label="SMS"
+            onClick={shareViaSMS}
+            color="bg-blue-400 hover:bg-blue-500"
+          />
+        </div>
+
+        {/* Bluetooth Status */}
+        <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FiBluetooth className={bluetoothConnected ? "text-green-500" : "text-gray-400"} />
+              <span className="text-xs text-gray-600">Printer: {bluetoothConnected ? 'Connected' : 'Disconnected'}</span>
+            </div>
+            {bluetoothConnected && (
+              <button
+                onClick={disconnectBluetooth}
+                className="text-red-600 text-xs hover:text-red-700 font-medium"
+              >
+                Disconnect
+              </button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 };
 

@@ -29,12 +29,14 @@ const FilterPage = () => {
   const [displayedVoters, setDisplayedVoters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine ?? true);
+  const [connectionInfo, setConnectionInfo] = useState({ effectiveType: 'unknown' });
+  const [usingCache, setUsingCache] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(1000); // reduce on mobile below
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportPassword, setExportPassword] = useState('');
   const [exportError, setExportError] = useState('');
-  const [expandedFilter, setExpandedFilter] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
 
   // Use filter keys matching UI categories to avoid mismatches
@@ -61,6 +63,30 @@ const FilterPage = () => {
     handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // connection and network-sensitivity (use Network Information API when available)
+  useEffect(() => {
+    const updateOnline = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', updateOnline);
+    window.addEventListener('offline', updateOnline);
+
+    const nav = navigator;
+    // @ts-ignore
+    const connection = nav.connection || nav.mozConnection || nav.webkitConnection;
+    const handleConn = () => {
+      if (connection) setConnectionInfo({ effectiveType: connection.effectiveType || 'unknown' });
+    };
+    if (connection) {
+      connection.addEventListener('change', handleConn);
+      handleConn();
+    }
+
+    return () => {
+      window.removeEventListener('online', updateOnline);
+      window.removeEventListener('offline', updateOnline);
+      if (connection) connection.removeEventListener('change', handleConn);
+    };
   }, []);
 
   // Map raw firebase keys to consistent local keys
@@ -125,16 +151,54 @@ const FilterPage = () => {
   const loadVoters = useCallback(async (forceRefresh = false) => {
     try {
       setLoading(true);
+      setUsingCache(false);
       if (forceRefresh) setRefreshing(true);
 
+      const cacheKey = 'voters_cache_v1';
+      // if we have cached data, keep it available as fallback
+      const cachedRaw = localStorage.getItem(cacheKey);
+      let cacheObj = null;
+      if (cachedRaw) {
+        try { cacheObj = JSON.parse(cachedRaw); } catch { cacheObj = null; }
+      }
+
       const votersRef = ref(db, 'voters');
+
+      // If connection is slow or offline, try using cache first
+      const slowTypes = ['2g', 'slow-2g'];
+      const isSlow = connectionInfo && slowTypes.includes(connectionInfo.effectiveType);
+      if ((!isOnline || isSlow) && cacheObj && !forceRefresh) {
+        // use cached data immediately to keep UI responsive
+        setVoters(cacheObj.data || []);
+        setLoading(false);
+        setUsingCache(true);
+      }
+
+      // subscribe to live updates; when data arrives, update cache
       onValue(votersRef, (snapshot) => {
         if (snapshot.exists()) {
           const raw = snapshot.val();
           const processed = processVoterData(raw);
           setVoters(processed);
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: processed }));
+          } catch {
+            // ignore localStorage errors
+          }
         } else {
-          setVoters([]);
+          // if firebase returns empty and cache exists use it
+          if (cacheObj && cacheObj.data) setVoters(cacheObj.data);
+          else setVoters([]);
+        }
+        setLoading(false);
+        setRefreshing(false);
+        setUsingCache(false);
+      }, (err) => {
+        console.error('Error loading voters:', err);
+        // on error, fallback to cache if present
+        if (cacheObj && cacheObj.data) {
+          setVoters(cacheObj.data);
+          setUsingCache(true);
         }
         setLoading(false);
         setRefreshing(false);
@@ -144,7 +208,7 @@ const FilterPage = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [processVoterData]);
+  }, [processVoterData, connectionInfo, isOnline]);
 
   useEffect(() => {
     loadVoters();
@@ -422,26 +486,26 @@ const FilterPage = () => {
 
   const toggleFilter = useCallback((id) => setExpandedFilter(prev => prev === id ? null : id), []);
 
-  // responsive list item (mobile)
-  const VoterCard = ({ v, index }) => (
+  // responsive list item (mobile) - memoized for performance
+  const VoterCard = React.memo(({ v, index }) => (
     <div onClick={() => handleVoterClick(v.id)} className="bg-white rounded-lg p-4 shadow-sm mb-3 cursor-pointer hover:shadow-md">
       <div className="flex justify-between items-start gap-3">
         <div className="min-w-0">
           <div className="font-semibold text-base truncate"><TranslatedText>{v.name}</TranslatedText></div>
-          <div className="text-sm text-gray-500">{v.fatherName ? `S/O ${v.fatherName}` : ''}</div>
-          <div className="text-xs text-gray-400 mt-2"><TranslatedText>ID:</TranslatedText> {v.voterId}</div>
+          <div className="text-sm text-gray-500">{v.fatherName ? <TranslatedText asText>{`S/O ${v.fatherName}`}</TranslatedText> : ''}</div>
+          <div className="text-xs text-gray-400 mt-2"><TranslatedText asText>ID:</TranslatedText> <TranslatedText asText>{v.voterId}</TranslatedText></div>
         </div>
         <div className="text-right">
           {v.hasVoted ? <div className="text-green-600 text-sm font-medium"><TranslatedText>Voted</TranslatedText></div> : <div className="text-red-600 text-sm font-medium"><TranslatedText>Not Voted</TranslatedText></div>}
-          <div className="text-xs text-gray-500 mt-2"><TranslatedText>{v.boothNumber ? `Booth ${v.boothNumber}` : ''}</TranslatedText></div>
+          <div className="text-xs text-gray-500 mt-2"><TranslatedText asText>{v.boothNumber ? `Booth ${v.boothNumber}` : ''}</TranslatedText></div>
         </div>
       </div>
       <div className="flex items-center gap-3 mt-3 text-xs text-gray-600">
-        {v.phone ? <div className="inline-flex items-center px-2 py-1 rounded bg-green-50 text-green-700">📞 {v.phone}</div> : <div className="inline-flex items-center px-2 py-1 rounded bg-gray-50 text-gray-500">No Phone</div>}
-        <div className="text-gray-500">🏠 {v.houseNumber || v.address || '-'}</div>
+        {/* {v.phone ? <div className="inline-flex items-center px-2 py-1 rounded bg-green-50 text-green-700">📞 <TranslatedText asText>{v.phone}</TranslatedText></div> : <div className="inline-flex items-center px-2 py-1 rounded bg-gray-50 text-gray-500"><TranslatedText>No Phone</TranslatedText></div>} */}
+        <div className="text-gray-500"><TranslatedText>{v.pollingStationAddress || '-'}</TranslatedText></div>
       </div>
     </div>
-  );
+  ));
 
   // Pagination UI for desktop & mobile
   const Pagination = () => {
@@ -479,16 +543,24 @@ const FilterPage = () => {
           <div className="flex items-center gap-3">
             <FiFilter className="text-orange-600" />
             <h1 className="text-lg font-semibold"><TranslatedText>Filters</TranslatedText></h1>
-            <div className="text-sm text-gray-500 ml-4"><TranslatedText>Total Voters:</TranslatedText> {voters.length}</div>
+              <div className="text-sm text-gray-500 ml-4"><TranslatedText>Total Voters:</TranslatedText> <span className="font-medium">{voters.length}</span></div>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={handleExport} className="px-3 py-2 bg-orange-600 text-white rounded"><FiDownload /></button>
-            <button onClick={handleRefresh} className="px-3 py-2 bg-white border rounded">{refreshing ? <FiLoader className="animate-spin" /> : 'Refresh'}</button>
+              <button onClick={handleRefresh} className="px-3 py-2 bg-white border rounded">{refreshing ? <FiLoader className="animate-spin" /> : <TranslatedText>Refresh</TranslatedText>}</button>
           </div>
         </div>
+        {/* connectivity / cache banner */}
+        {(usingCache || !isOnline || (connectionInfo && ['2g','slow-2g'].includes(connectionInfo.effectiveType))) && (
+          <div className="bg-yellow-50 border-t border-yellow-100 text-yellow-800 text-sm px-4 py-2">
+            {usingCache && <TranslatedText asText>You're viewing cached data (may be stale).</TranslatedText>}
+            {!usingCache && !isOnline && <TranslatedText asText>You are offline. Showing cached data if available.</TranslatedText>}
+            {!usingCache && isOnline && connectionInfo && ['2g','slow-2g'].includes(connectionInfo.effectiveType) && <TranslatedText asText>Network is slow — using cached data for responsiveness.</TranslatedText>}
+          </div>
+        )}
 
         <div className="max-w-7xl mx-auto px-4 pb-4">
-          <div className="relative">
+            <div className="relative">
             <FiSearch className="absolute left-3 top-3 text-gray-400" />
             <input value={filters.searchTerm} onChange={(e) => handleFilterChange('searchTerm', e.target.value)} placeholder="Search by name, voter ID, father name..." className="w-full pl-10 pr-4 py-2 rounded border" />
           </div>
@@ -507,69 +579,69 @@ const FilterPage = () => {
             <div className="mb-3">
               <label className="text-sm font-medium"><TranslatedText>Booth</TranslatedText></label>
               <select value={filters.booth} onChange={(e) => handleFilterChange('booth', e.target.value)} className="w-full mt-1 p-2 border rounded text-sm">
-                <option value=""><TranslatedText>All Booths</TranslatedText></option>
-                {uniqueValues.booths.map(b => <option key={b} value={b}>{b}</option>)}
+                <option value=""><TranslatedText asText>All Booths</TranslatedText></option>
+                {uniqueValues.booths.map(b => <option key={b} value={b}><TranslatedText asText>{b}</TranslatedText></option>)}
               </select>
             </div>
 
             <div className="mb-3">
               <label className="text-sm font-medium"><TranslatedText>Polling Station</TranslatedText></label>
              <select value={filters.polling} onChange={(e) => handleFilterChange('polling', e.target.value)} className="w-full mt-1 p-2 border rounded text-sm">
-                <option value=""><TranslatedText>All</TranslatedText></option>
-                {uniqueValues.pollingStations.map(p => <option key={p} value={p}>{p.length > 40 ? p.slice(0, 40) + '...' : p}</option>)}
+                <option value=""><TranslatedText asText>All</TranslatedText></option>
+                {uniqueValues.pollingStations.map(p => <option key={p} value={p}><TranslatedText asText>{p.length > 40 ? p.slice(0, 40) + '...' : p}</TranslatedText></option>)}
               </select>
             </div>
 
             <div className="mb-3">
               <label className="text-sm font-medium"><TranslatedText>Village</TranslatedText></label>
               <select value={filters.village} onChange={(e) => handleFilterChange('village', e.target.value)} className="w-full mt-1 p-2 border rounded text-sm">
-                <option value=""><TranslatedText>All</TranslatedText></option>
-                {uniqueValues.villages.map(v => <option key={v} value={v}>{v}</option>)}
+                <option value=""><TranslatedText asText>All</TranslatedText></option>
+                {uniqueValues.villages.map(v => <option key={v} value={v}><TranslatedText asText>{v}</TranslatedText></option>)}
               </select>
             </div>
 
             <div className="mb-3">
               <label className="text-sm font-medium"><TranslatedText>Phone</TranslatedText></label>
               <div className="flex gap-2 mt-1">
-                <button onClick={() => handleFilterChange('phone', '')} className={`px-2 py-1 rounded ${filters.phone === '' ? 'bg-orange-100' : 'bg-gray-100'}`}><TranslatedText>All</TranslatedText></button>
-                <button onClick={() => handleFilterChange('phone', 'yes')} className={`px-2 py-1 rounded ${filters.phone === 'yes' ? 'bg-orange-100' : 'bg-gray-100'}`}><TranslatedText>With</TranslatedText></button>
-                <button onClick={() => handleFilterChange('phone', 'no')} className={`px-2 py-1 rounded ${filters.phone === 'no' ? 'bg-orange-100' : 'bg-gray-100'}`}><TranslatedText>Without</TranslatedText></button>
+                <button onClick={() => handleFilterChange('phone', '')} className={`px-2 py-1 rounded ${filters.phone === '' ? 'bg-orange-100' : 'bg-gray-100'}`}><TranslatedText asText>All</TranslatedText></button>
+                <button onClick={() => handleFilterChange('phone', 'yes')} className={`px-2 py-1 rounded ${filters.phone === 'yes' ? 'bg-orange-100' : 'bg-gray-100'}`}><TranslatedText asText>With</TranslatedText></button>
+                <button onClick={() => handleFilterChange('phone', 'no')} className={`px-2 py-1 rounded ${filters.phone === 'no' ? 'bg-orange-100' : 'bg-gray-100'}`}><TranslatedText asText>Without</TranslatedText></button>
               </div>
             </div>
 
             <div className="mb-3">
               <label className="text-sm font-medium"><TranslatedText>Voting</TranslatedText></label>
               <div className="flex gap-2 mt-1">
-                <button onClick={() => handleFilterChange('voted', '')} className={`px-2 py-1 rounded ${filters.voted === '' ? 'bg-orange-100' : 'bg-gray-100'}`}><TranslatedText>All</TranslatedText></button>
-                <button onClick={() => handleFilterChange('voted', 'voted')} className={`px-2 py-1 rounded ${filters.voted === 'voted' ? 'bg-orange-100' : 'bg-gray-100'}`}><TranslatedText>Voted</TranslatedText></button>
-                <button onClick={() => handleFilterChange('voted', 'notVoted')} className={`px-2 py-1 rounded ${filters.voted === 'notVoted' ? 'bg-orange-100' : 'bg-gray-100'}`}><TranslatedText>Not Voted</TranslatedText></button>
+                <button onClick={() => handleFilterChange('voted', '')} className={`px-2 py-1 rounded ${filters.voted === '' ? 'bg-orange-100' : 'bg-gray-100'}`}><TranslatedText asText>All</TranslatedText></button>
+                <button onClick={() => handleFilterChange('voted', 'voted')} className={`px-2 py-1 rounded ${filters.voted === 'voted' ? 'bg-orange-100' : 'bg-gray-100'}`}><TranslatedText asText>Voted</TranslatedText></button>
+                <button onClick={() => handleFilterChange('voted', 'notVoted')} className={`px-2 py-1 rounded ${filters.voted === 'notVoted' ? 'bg-orange-100' : 'bg-gray-100'}`}><TranslatedText asText>Not Voted</TranslatedText></button>
               </div>
             </div>
 
             <div className="mb-3">
               <label className="text-sm font-medium">Support</label>
               <select value={filters.support} onChange={(e) => handleFilterChange('support', e.target.value)} className="w-full mt-1 p-2 border rounded text-sm">
-                <option value="">All</option>
-                <option value="strong">Strong</option>
-                <option value="medium">Medium</option>
-                <option value="weak">Weak</option>
-                <option value="against">Against</option>
+                <option value=""><TranslatedText asText>All</TranslatedText></option>
+                <option value="strong"><TranslatedText asText>Strong</TranslatedText></option>
+                <option value="medium"><TranslatedText asText>Medium</TranslatedText></option>
+                <option value="weak"><TranslatedText asText>Weak</TranslatedText></option>
+                <option value="against"><TranslatedText asText>Against</TranslatedText></option>
               </select>
             </div>
 
             <div className="mb-3">
               <label className="text-sm font-medium"><TranslatedText>Duplicates</TranslatedText></label>
               <select value={filters.duplicateType} onChange={(e) => handleFilterChange('duplicateType', e.target.value)} className="w-full mt-1 p-2 border rounded text-sm">
-                <option value="">None</option>
-                <option value="phone">Phone</option>
-                <option value="voterId">Voter ID</option>
-                <option value="name">Name</option>
-                <option value="address">Address</option>
+                <option value=""><TranslatedText asText>None</TranslatedText></option>
+                <option value="phone"><TranslatedText asText>Phone</TranslatedText></option>
+                <option value="voterId"><TranslatedText asText>Voter ID</TranslatedText></option>
+                <option value="name"><TranslatedText asText>Name</TranslatedText></option>
+                <option value="address"><TranslatedText asText>Address</TranslatedText></option>
               </select>
             </div>
 
             <div className="mt-4">
-              <button onClick={() => { setFilters(prev => ({ ...prev, sortBy: prev.sortBy === 'name' ? 'serial' : 'name' })); }} className="w-full py-2 bg-orange-600 text-white rounded">Toggle Sort</button>
+              <button onClick={() => { setFilters(prev => ({ ...prev, sortBy: prev.sortBy === 'name' ? 'serial' : 'name' })); }} className="w-full py-2 bg-orange-600 text-white rounded"><TranslatedText>Toggle Sort</TranslatedText></button>
             </div>
           </div>
         </aside>
@@ -594,10 +666,10 @@ const FilterPage = () => {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">#</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Voter</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Contact</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Location</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Status</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500"><TranslatedText asText>Voter</TranslatedText></th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500"><TranslatedText asText>Contact</TranslatedText></th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500"><TranslatedText asText>Location</TranslatedText></th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500"><TranslatedText asText>Status</TranslatedText></th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -605,21 +677,21 @@ const FilterPage = () => {
                       <tr key={v.id} className="hover:bg-orange-50 cursor-pointer" onClick={() => handleVoterClick(v.id)}>
                         <td className="px-4 py-3 text-sm font-medium">{(currentPage - 1) * itemsPerPage + idx + 1}</td>
                         <td className="px-4 py-3">
-                          <div className="font-medium">{v.name}</div>
-                          <div className="text-sm text-gray-500">{v.fatherName ? `S/O ${v.fatherName}` : ''}</div>
-                          <div className="text-xs text-gray-400 mt-1">ID: {v.voterId}</div>
+                          <div className="font-medium"><TranslatedText asText>{v.name}</TranslatedText></div>
+                          <div className="text-sm text-gray-500">{v.fatherName ? <TranslatedText asText>{`S/O ${v.fatherName}`}</TranslatedText> : ''}</div>
+                          <div className="text-xs text-gray-400 mt-1"><TranslatedText asText>ID:</TranslatedText> <TranslatedText asText>{v.voterId}</TranslatedText></div>
                         </td>
                         <td className="px-4 py-3">
-                          {v.phone ? <div className="text-sm text-green-700">📞 {v.phone}</div> : <div className="text-sm text-gray-400">No Phone</div>}
+                          {v.phone ? <div className="text-sm text-green-700">📞 <TranslatedText asText>{v.phone}</TranslatedText></div> : <div className="text-sm text-gray-400"><TranslatedText asText>No Phone</TranslatedText></div>}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="text-sm">{v.boothNumber ? `Booth: ${v.boothNumber}` : ''}</div>
-                          <div className="text-sm text-gray-500">{v.village}</div>
+                          <div className="text-sm"><TranslatedText asText>{v.boothNumber ? `Booth: ${v.boothNumber}` : ''}</TranslatedText></div>
+                          <div className="text-sm text-gray-500"><TranslatedText asText>{v.village}</TranslatedText></div>
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex flex-col gap-2">
-                            {v.hasVoted ? <span className="text-green-700 text-sm">Voted</span> : <span className="text-red-700 text-sm">Not Voted</span>}
-                            <span className="text-xs px-2 py-0.5 rounded" style={{ background: '#f3f4f6' }}>{v.supportStatus || 'Unknown'}</span>
+                            {v.hasVoted ? <span className="text-green-700 text-sm"><TranslatedText asText>Voted</TranslatedText></span> : <span className="text-red-700 text-sm"><TranslatedText asText>Not Voted</TranslatedText></span>}
+                            <span className="text-xs px-2 py-0.5 rounded" style={{ background: '#f3f4f6' }}><TranslatedText asText>{v.supportStatus || 'Unknown'}</TranslatedText></span>
                           </div>
                         </td>
                       </tr>
@@ -636,13 +708,13 @@ const FilterPage = () => {
       {showExportModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-2">Export to Excel</h3>
-            <p className="text-sm text-gray-600 mb-4">Enter admin password to export {filteredVoters.length} voters</p>
+            <h3 className="text-lg font-semibold mb-2"><TranslatedText>Export to Excel</TranslatedText></h3>
+            <p className="text-sm text-gray-600 mb-4"><TranslatedText asText>Enter admin password to export</TranslatedText> <strong>{filteredVoters.length}</strong> <TranslatedText asText>voters</TranslatedText></p>
             <input type="password" value={exportPassword} onChange={(e) => setExportPassword(e.target.value)} className="w-full p-2 border rounded mb-3" placeholder="Admin password" />
             {exportError && <div className="text-red-600 mb-3">{exportError}</div>}
             <div className="flex gap-2">
-              <button onClick={() => setShowExportModal(false)} className="flex-1 p-2 border rounded">Cancel</button>
-              <button onClick={handleExportConfirm} className="flex-1 p-2 bg-orange-600 text-white rounded">Export</button>
+              <button onClick={() => setShowExportModal(false)} className="flex-1 p-2 border rounded"><TranslatedText>Cancel</TranslatedText></button>
+              <button onClick={handleExportConfirm} className="flex-1 p-2 bg-orange-600 text-white rounded"><TranslatedText>Export</TranslatedText></button>
             </div>
           </div>
         </div>

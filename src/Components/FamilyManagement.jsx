@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { db, ref, get, update } from '../Firebase/config';
 import { FiUsers, FiPlus, FiX, FiSearch, FiPrinter } from 'react-icons/fi';
 import { FaWhatsapp } from 'react-icons/fa';
+import TranslatedText from './TranslatedText';
 
 const FamilyManagement = ({ voter, familyMembers, onUpdate, candidateInfo }) => {
   const [showFamilyModal, setShowFamilyModal] = useState(false);
@@ -246,7 +247,7 @@ const FamilyManagement = ({ voter, familyMembers, onUpdate, candidateInfo }) => 
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
           <FiUsers className="text-orange-500" />
-          Family Members
+          <TranslatedText>Family Members</TranslatedText>
         </h3>
         <div className="flex gap-2">
           <button
@@ -254,7 +255,7 @@ const FamilyManagement = ({ voter, familyMembers, onUpdate, candidateInfo }) => 
             className="flex items-center gap-2 bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors"
           >
             <FiPlus className="text-sm" />
-            Add
+           <TranslatedText>Add</TranslatedText>
           </button>
         </div>
       </div>
@@ -268,14 +269,14 @@ const FamilyManagement = ({ voter, familyMembers, onUpdate, candidateInfo }) => 
             className="bg-indigo-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-indigo-700 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm shadow-sm hover:shadow-md"
           >
             <FiPrinter className="text-lg" />
-            <span>Print Family</span>
+            <span><TranslatedText>Print Family</TranslatedText></span>
           </button>
           <button
             onClick={shareFamilyViaWhatsApp}
             className="bg-green-500 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-600 transition-all duration-200 flex items-center justify-center gap-2 text-sm shadow-sm hover:shadow-md"
           >
             <FaWhatsapp className="text-lg" />
-            <span>Share Family</span>
+            <span><TranslatedText>Share Family</TranslatedText></span>
           </button>
         </div>
       )}
@@ -284,9 +285,9 @@ const FamilyManagement = ({ voter, familyMembers, onUpdate, candidateInfo }) => 
         {familyMembers.map((member) => (
           <div key={member.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:border-orange-300 transition-colors bg-white">
             <div className="flex-1">
-              <div className="font-medium text-gray-900">{member.name}</div>
+              <div className="font-medium text-gray-900"><TranslatedText>{member.name}</TranslatedText></div>
               <div className="text-xs text-gray-500 mt-1">
-                ID: {member.voterId} • Age: {member.age || 'N/A'} • Booth: {member.boothNumber || 'N/A'} • Address: {member.pollingStationAddress || 'N/A'}
+                <TranslatedText>ID:</TranslatedText> {member.voterId} • <TranslatedText>Age: {member.age || 'N/A'}</TranslatedText> • <TranslatedText>Booth: {member.boothNumber || 'N/A'}</TranslatedText> • <TranslatedText>Address: {member.pollingStationAddress || 'N/A'}</TranslatedText>
               </div>
             </div>
             <div className="flex gap-2">
@@ -294,13 +295,13 @@ const FamilyManagement = ({ voter, familyMembers, onUpdate, candidateInfo }) => 
                 onClick={() => window.open(`/voter/${member.id}`, '_blank')}
                 className="text-orange-600 hover:text-orange-700 text-xs font-medium px-3 py-1 bg-orange-50 rounded-md transition-colors"
               >
-                View
+                <TranslatedText>View</TranslatedText>
               </button>
               <button
                 onClick={() => removeFamilyMember(member.id)}
                 className="text-red-600 hover:text-red-700 text-xs font-medium px-3 py-1 bg-red-50 rounded-md transition-colors"
               >
-                Remove
+               <TranslatedText>Remove</TranslatedText>
               </button>
             </div>
           </div>
@@ -310,7 +311,7 @@ const FamilyManagement = ({ voter, familyMembers, onUpdate, candidateInfo }) => 
       {familyMembers.length === 0 && (
         <div className="text-center py-8 text-gray-500">
           <FiUsers className="text-4xl text-gray-300 mx-auto mb-3" />
-          <p className="text-sm">No family members added yet.</p>
+          <p className="text-sm"><TranslatedText>No family members added yet.</TranslatedText></p>
         </div>
       )}
 
@@ -322,10 +323,10 @@ const FamilyManagement = ({ voter, familyMembers, onUpdate, candidateInfo }) => 
             <div className="p-4 border-b border-gray-200 flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">
-                  Add Family Member
+                  <TranslatedText>Add Family Member</TranslatedText>
                 </h3>
                 <p className="text-sm text-gray-500 mt-1">
-                  Search and select voters to add as family members
+                   <TranslatedText>Search and select voters to add as family members</TranslatedText>
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -361,7 +362,7 @@ const FamilyManagement = ({ voter, familyMembers, onUpdate, candidateInfo }) => 
               {voterSurname && surnameTopList.length > 0 && (
                 <div className="mb-3">
                   <div className="text-sm text-gray-700 font-medium">
-                    Showing same surname first: <span className="ml-2 font-semibold">{voterSurname}</span> • <span className="text-xs text-gray-500">{surnameTopList.length} matches</span>
+                    <TranslatedText>Showing same surname first:</TranslatedText> <span className="ml-2 font-semibold"><TranslatedText>{voterSurname}</TranslatedText></span> • <span className="text-xs text-gray-500"><TranslatedText>{surnameTopList.length} matches</TranslatedText></span>
                   </div>
                 </div>
               )}
@@ -371,8 +372,8 @@ const FamilyManagement = ({ voter, familyMembers, onUpdate, candidateInfo }) => 
                 {paginatedList.length > 0 ? paginatedList.map((v) => (
                   <div key={v.id} className="flex items-center justify-between p-4 border-b border-gray-200 hover:bg-gray-50 transition-colors">
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-medium text-gray-900 truncate">{v.name}</h4>
-                      <p className="text-sm text-gray-700 truncate">ID: {v.voterId} • Booth: {v.boothNumber || 'N/A'}</p>
+                      <h4 className="font-medium text-gray-900 truncate"><TranslatedText>{v.name}</TranslatedText></h4>
+                      <p className="text-sm text-gray-700 truncate"><TranslatedText>ID:</TranslatedText> {v.voterId} • <TranslatedText>Booth: {v.boothNumber || 'N/A'}</TranslatedText></p>
                     </div>
                     <div className="flex gap-2 ml-4">
                       <button
@@ -380,13 +381,13 @@ const FamilyManagement = ({ voter, familyMembers, onUpdate, candidateInfo }) => 
                         className="flex items-center gap-2 bg-orange-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-orange-600 transition-colors"
                       >
                         <FiPlus className="text-xs" />
-                        Add
+                        <TranslatedText>Add</TranslatedText>
                       </button>
                     </div>
                   </div>
                 )) : (
                   <div className="text-center py-8 text-gray-500">
-                    No voters found matching your search.
+                    <TranslatedText>No voters found matching your search.</TranslatedText>
                   </div>
                 )}
               </div>
@@ -422,7 +423,7 @@ const FamilyManagement = ({ voter, familyMembers, onUpdate, candidateInfo }) => 
                   onClick={() => setShowFamilyModal(false)}
                   className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
                 >
-                  Close
+                  <TranslatedText>Close</TranslatedText>
                 </button>
               </div>
             </div>
